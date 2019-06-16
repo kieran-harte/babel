@@ -218,6 +218,7 @@ export function replaceExpressionWithStatements(nodes: Array<Object>) {
 
   const functionParent = this.getFunctionParent();
   const isParentAsync = functionParent && functionParent.is("async");
+  const isParentGenerator = functionParent && functionParent.is("generator");
 
   const container = t.arrowFunctionExpression([], t.blockStatement(nodes));
 
@@ -260,16 +261,27 @@ export function replaceExpressionWithStatements(nodes: Array<Object>) {
   callee.arrowFunctionToExpression();
 
   // (() => await xxx)() -> await (async () => await xxx)();
-  if (
+  const needToAwaitFunction =
     isParentAsync &&
     traverse.hasType(
       this.get("callee.body").node,
       "AwaitExpression",
       t.FUNCTION_TYPES,
-    )
-  ) {
+    );
+  const needToYieldFunction =
+    isParentGenerator &&
+    traverse.hasType(
+      this.get("callee.body").node,
+      "YieldExpression",
+      t.FUNCTION_TYPES,
+    );
+  if (needToAwaitFunction) {
     callee.set("async", true);
     this.replaceWith(t.awaitExpression(this.node));
+  }
+  if (needToYieldFunction) {
+    callee.set("generator", true);
+    this.replaceWith(t.yieldExpression(this.node, true));
   }
 
   return callee.get("body.body");
