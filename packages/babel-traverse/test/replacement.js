@@ -1,28 +1,30 @@
 import traverse from "../lib";
-import assert from "assert";
-import { parse } from "babylon";
-import * as t from "babel-types";
-import { expect } from "chai";
+import { parse } from "@babel/parser";
+import * as t from "@babel/types";
 
-describe("path/replacement", function () {
-  describe("replaceWith", function () {
+describe("path/replacement", function() {
+  describe("replaceWith", function() {
     it("replaces declaration in ExportDefaultDeclaration node", function() {
-      const ast = parse("export default function() {};", { sourceType: "module" });
+      const ast = parse("export default function() {};", {
+        sourceType: "module",
+      });
       traverse(ast, {
         FunctionDeclaration(path) {
-          path.replaceWith(t.arrayExpression([
-            t.functionExpression(
-              path.node.id,
-              path.node.params,
-              path.node.body,
-              path.node.generator,
-              path.node.async
-            ),
-          ]));
+          path.replaceWith(
+            t.arrayExpression([
+              t.functionExpression(
+                path.node.id,
+                path.node.params,
+                path.node.body,
+                path.node.generator,
+                path.node.async,
+              ),
+            ]),
+          );
         },
       });
 
-      assert(ast.program.body[0].declaration.type == "ArrayExpression");
+      expect(ast.program.body[0].declaration.type).toBe("ArrayExpression");
     });
 
     it("throws error when trying to replace Program with a non-Program node", function() {
@@ -33,7 +35,9 @@ describe("path/replacement", function () {
             path.replaceWith(t.identifier("a"));
           },
         });
-      }).to.throw(/You can only replace a Program root node with another Program node/);
+      }).toThrow(
+        /You can only replace a Program root node with another Program node/,
+      );
     });
 
     it("throws error when used with an array of nodes", function() {
@@ -48,21 +52,23 @@ describe("path/replacement", function () {
             ]);
           },
         });
-      }).to.throw(
-        /Don't use `path\.replaceWith\(\)` with an array of nodes, use `path\.replaceWithMultiple\(\)`/
+      }).toThrow(
+        /Don't use `path\.replaceWith\(\)` with an array of nodes, use `path\.replaceWithMultiple\(\)`/,
       );
     });
 
     it("throws error when used with source string", function() {
-      const ast = parse("(function() { var x = 3; var y = 17; var c = x + y; })();");
+      const ast = parse(
+        "(function() { var x = 3; var y = 17; var c = x + y; })();",
+      );
       expect(function() {
         traverse(ast, {
           BinaryExpression(path) {
             path.replaceWith("17 + 23");
           },
         });
-      }).to.throw(
-        /Don't use `path\.replaceWith\(\)` with a source string, use `path\.replaceWithSourceString\(\)`/
+      }).toThrow(
+        /Don't use `path\.replaceWith\(\)` with a source string, use `path\.replaceWithSourceString\(\)`/,
       );
     });
 
@@ -75,9 +81,7 @@ describe("path/replacement", function () {
             path.replaceWith(t.identifier("p"));
           },
         });
-      }).to.throw(
-        /You can't replace this node, we've already removed it/,
-      );
+      }).toThrow(/You can't replace this node, we've already removed it/);
     });
 
     it("throws error when passed a falsy value", function() {
@@ -88,10 +92,9 @@ describe("path/replacement", function () {
             path.replaceWith();
           },
         });
-      }).to.throw(
+      }).toThrow(
         /You passed `path\.replaceWith\(\)` a falsy node, use `path\.remove\(\)` instead/,
       );
     });
-
   });
 });

@@ -1,60 +1,128 @@
-import syntaxFlow from "babel-plugin-syntax-flow";
+import { declare } from "@babel/helper-plugin-utils";
+import syntaxFlow from "@babel/plugin-syntax-flow";
+import { types as t } from "@babel/core";
+import generateCode from "@babel/generator";
 
-export default function ({ types: t }) {
+export default declare(api => {
+  api.assertVersion(7);
+
+  function attachComment(path, comment) {
+    let attach = path.getPrevSibling();
+    let where = "trailing";
+    if (!attach.node) {
+      attach = path.parentPath;
+      where = "inner";
+    }
+    attach.addComment(where, comment);
+    path.remove();
+  }
+
   function wrapInFlowComment(path, parent) {
-    path.addComment("trailing", generateComment(path, parent));
-    path.replaceWith(t.noop());
+    attachComment(path, generateComment(path, parent));
   }
 
   function generateComment(path, parent) {
-    let comment = path.getSource().replace(/\*-\//g, "*-ESCAPED/").replace(/\*\//g, "*-/");
+    let comment = path
+      .getSource()
+      .replace(/\*-\//g, "*-ESCAPED/")
+      .replace(/\*\//g, "*-/");
     if (parent && parent.optional) comment = "?" + comment;
     if (comment[0] !== ":") comment = ":: " + comment;
     return comment;
   }
 
+  function isTypeImport(importKind) {
+    return importKind === "type" || importKind === "typeof";
+  }
+
   return {
+    name: "transform-flow-comments",
     inherits: syntaxFlow,
 
     visitor: {
       TypeCastExpression(path) {
         const { node } = path;
-        path.get("expression").addComment("trailing", generateComment(path.get("typeAnnotation")));
+        path
+          .get("expression")
+          .addComment("trailing", generateComment(path.get("typeAnnotation")));
         path.replaceWith(t.parenthesizedExpression(node.expression));
       },
 
       // support function a(b?) {}
       Identifier(path) {
-        const { node } = path;
-        if (!node.optional || node.typeAnnotation) {
+        if (path.parentPath.isFlow()) {
           return;
         }
-        path.addComment("trailing", ":: ?");
+
+        const { node } = path;
+        if (node.typeAnnotation) {
+          const typeAnnotation = path.get("typeAnnotation");
+          path.addComment("trailing", generateComment(typeAnnotation, node));
+          typeAnnotation.remove();
+          if (node.optional) {
+            node.optional = false;
+          }
+        } else if (node.optional) {
+          path.addComment("trailing", ":: ?");
+          node.optional = false;
+        }
       },
 
       AssignmentPattern: {
         exit({ node }) {
-          node.left.optional = false;
+          const { left } = node;
+          if (left.optional) {
+            left.optional = false;
+          }
         },
       },
 
       // strip optional property from function params - facebook/fbjs#17
-      Function: {
-        exit({ node }) {
-          node.params.forEach((param) => param.optional = false);
-        },
+      Function(path) {
+        if (path.isDeclareFunction()) return;
+        const { node } = path;
+        if (node.returnType) {
+          const returnType = path.get("returnType");
+          const typeAnnotation = returnType.get("typeAnnotation");
+          const block = path.get("body");
+          block.addComment(
+            "leading",
+            generateComment(returnType, typeAnnotation.node),
+          );
+          returnType.remove();
+        }
+        if (node.typeParameters) {
+          const typeParameters = path.get("typeParameters");
+          const id = path.get("id");
+          id.addComment(
+            "trailing",
+            generateComment(typeParameters, typeParameters.node),
+          );
+          typeParameters.remove();
+        }
       },
 
       // support for `class X { foo: string }` - #4622
       ClassProperty(path) {
         const { node, parent } = path;
-        if (!node.value) wrapInFlowComment(path, parent);
+        if (!node.value) {
+          wrapInFlowComment(path, parent);
+        } else if (node.typeAnnotation) {
+          const typeAnnotation = path.get("typeAnnotation");
+          path
+            .get("key")
+            .addComment(
+              "trailing",
+              generateComment(typeAnnotation, typeAnnotation.node),
+            );
+          typeAnnotation.remove();
+        }
       },
 
       // support `export type a = {}` - #8 Error: You passed path.replaceWith() a falsy node
-      "ExportNamedDeclaration|Flow"(path) {
+      ExportNamedDeclaration(path) {
         const { node, parent } = path;
-        if (t.isExportNamedDeclaration(node) && node.exportKind !== "type" && !t.isFlow(node.declaration)) {
+        if (node.exportKind !== "type" && !t.isFlow(node.declaration)) {
           return;
         }
         wrapInFlowComment(path, parent);
@@ -63,11 +131,80 @@ export default function ({ types: t }) {
       // support `import type A` and `import typeof A` #10
       ImportDeclaration(path) {
         const { node, parent } = path;
-        if (t.isImportDeclaration(node) && node.importKind !== "type" && node.importKind !== "typeof") {
+        if (isTypeImport(node.importKind)) {
+          wrapInFlowComment(path, parent);
           return;
         }
+
+        const typeSpecifiers = node.specifiers.filter(specifier =>
+          isTypeImport(specifier.importKind),
+        );
+
+        const nonTypeSpecifiers = node.specifiers.filter(
+          specifier => !isTypeImport(specifier.importKind),
+        );
+        node.specifiers = nonTypeSpecifiers;
+
+        if (typeSpecifiers.length > 0) {
+          const typeImportNode = t.cloneNode(node);
+          typeImportNode.specifiers = typeSpecifiers;
+
+          if (nonTypeSpecifiers.length > 0) {
+            path.addComment(
+              "trailing",
+              `:: ${generateCode(typeImportNode).code}`,
+            );
+          } else {
+            attachComment(path, `:: ${generateCode(typeImportNode).code}`);
+          }
+        }
+      },
+      ObjectPattern(path) {
+        const { node } = path;
+        if (node.typeAnnotation) {
+          const typeAnnotation = path.get("typeAnnotation");
+          path.addComment(
+            "trailing",
+            generateComment(typeAnnotation, typeAnnotation.node),
+          );
+          typeAnnotation.remove();
+        }
+      },
+
+      Flow(path) {
+        const { parent } = path;
         wrapInFlowComment(path, parent);
+      },
+
+      Class(path) {
+        const { node } = path;
+        if (node.typeParameters || node.implements) {
+          const comments = [];
+          if (node.typeParameters) {
+            const typeParameters = path.get("typeParameters");
+            comments.push(
+              generateComment(typeParameters, typeParameters.node).replace(
+                /^:: /,
+                "",
+              ),
+            );
+            typeParameters.remove();
+          }
+          if (node.implements) {
+            const impls = path.get("implements");
+            comments.push(
+              "implements " +
+                impls
+                  .map(impl => generateComment(impl).replace(/^:: /, ""))
+                  .join(", "),
+            );
+            delete node["implements"];
+          }
+
+          const block = path.get("body");
+          block.addComment("leading", ":: " + comments.join(" "));
+        }
       },
     },
   };
-}
+});

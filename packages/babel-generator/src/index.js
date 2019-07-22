@@ -1,7 +1,5 @@
 import SourceMap from "./source-map";
-import * as messages from "babel-messages";
-import Printer from "./printer";
-import type { Format } from "./printer";
+import Printer, { type Format } from "./printer";
 
 /**
  * Babel's code generator, turns an ast into code, maintaining sourcemaps,
@@ -10,10 +8,9 @@ import type { Format } from "./printer";
 
 class Generator extends Printer {
   constructor(ast, opts = {}, code) {
-    const tokens = ast.tokens || [];
     const format = normalizeOptions(code, opts);
     const map = opts.sourceMaps ? new SourceMap(opts, code) : null;
-    super(format, map, tokens);
+    super(format, map);
 
     this.ast = ast;
   }
@@ -49,29 +46,41 @@ function normalizeOptions(code, opts): Format {
     compact: opts.compact,
     minified: opts.minified,
     concise: opts.concise,
-    quotes: "double",
     jsonCompatibleStrings: opts.jsonCompatibleStrings,
     indent: {
       adjustMultilineComment: true,
       style: "  ",
       base: 0,
     },
+    decoratorsBeforeExport: !!opts.decoratorsBeforeExport,
+    jsescOption: {
+      quotes: "double",
+      wrap: true,
+      ...opts.jsescOption,
+    },
   };
 
   if (format.minified) {
     format.compact = true;
 
-    format.shouldPrintComment = format.shouldPrintComment || (() => format.comments);
+    format.shouldPrintComment =
+      format.shouldPrintComment || (() => format.comments);
   } else {
-    format.shouldPrintComment = format.shouldPrintComment || ((value) => format.comments ||
-      (value.indexOf("@license") >= 0 || value.indexOf("@preserve") >= 0));
+    format.shouldPrintComment =
+      format.shouldPrintComment ||
+      (value =>
+        format.comments ||
+        (value.indexOf("@license") >= 0 || value.indexOf("@preserve") >= 0));
   }
 
   if (format.compact === "auto") {
-    format.compact = code.length > 500000; // 500KB
+    format.compact = code.length > 500_000; // 500KB
 
     if (format.compact) {
-      console.error("[BABEL] " + messages.get("codeGeneratorDeopt", opts.filename, "500KB"));
+      console.error(
+        "[BABEL] Note: The code generator has deoptimised the styling of " +
+          `${opts.filename} as it exceeds the max of ${"500KB"}.`,
+      );
     }
   }
 
@@ -97,7 +106,7 @@ export class CodeGenerator {
   }
 }
 
-export default function (ast: Object, opts: Object, code: string): Object {
+export default function(ast: Object, opts: Object, code: string): Object {
   const gen = new Generator(ast, opts, code);
   return gen.generate();
 }

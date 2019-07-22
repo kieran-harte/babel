@@ -1,5 +1,5 @@
-import { react } from "babel-types";
-import * as t from "babel-types";
+import { react } from "@babel/types";
+import * as t from "@babel/types";
 
 const referenceVisitor = {
   // This visitor looks for bindings to establish a topmost scope for hoisting.
@@ -18,8 +18,13 @@ const referenceVisitor = {
     if (path.node.name === "this") {
       let scope = path.scope;
       do {
-        if (scope.path.isFunction() && !scope.path.isArrowFunctionExpression()) break;
-      } while (scope = scope.parent);
+        if (
+          scope.path.isFunction() &&
+          !scope.path.isArrowFunctionExpression()
+        ) {
+          break;
+        }
+      } while ((scope = scope.parent));
       if (scope) state.breakOnScopePaths.push(scope.path);
     }
 
@@ -53,7 +58,7 @@ export default class PathHoister {
 
   // A scope is compatible if all required bindings are reachable.
   isCompatibleScope(scope) {
-    for (const key in this.bindings) {
+    for (const key of Object.keys(this.bindings)) {
       const binding = this.bindings[key];
       if (!scope.bindingIdentifierEquals(key, binding.identifier)) {
         return false;
@@ -77,7 +82,7 @@ export default class PathHoister {
       if (this.breakOnScopePaths.indexOf(scope.path) >= 0) {
         break;
       }
-    } while (scope = scope.parent);
+    } while ((scope = scope.parent));
   }
 
   getAttachmentPath() {
@@ -93,14 +98,16 @@ export default class PathHoister {
 
     // avoid hoisting to a scope that contains bindings that are executed after our attachment path
     if (targetScope.path.isProgram() || targetScope.path.isFunction()) {
-      for (const name in this.bindings) {
+      for (const name of Object.keys(this.bindings)) {
         // check binding is a direct child of this paths scope
         if (!targetScope.hasOwnBinding(name)) continue;
 
         const binding = this.bindings[name];
 
         // allow parameter references and expressions in params (like destructuring rest)
-        if (binding.kind === "param" || binding.path.parentKey === "params") continue;
+        if (binding.kind === "param" || binding.path.parentKey === "params") {
+          continue;
+        }
 
         // For each binding, get its attachment parent. This gives us an idea of where we might
         // introduce conflicts.
@@ -119,12 +126,6 @@ export default class PathHoister {
           }
         }
       }
-    }
-
-    // We can't insert before/after a child of an export declaration, so move up
-    // to the declaration itself.
-    if (path.parentPath.isExportDeclaration()) {
-      path = path.parentPath;
     }
 
     return path;
@@ -181,7 +182,7 @@ export default class PathHoister {
 
   // Returns true if a scope has param bindings.
   hasOwnParamBindings(scope) {
-    for (const name in this.bindings) {
+    for (const name of Object.keys(this.bindings)) {
       if (!scope.hasOwnBinding(name)) continue;
 
       const binding = this.bindings[name];
@@ -192,10 +193,6 @@ export default class PathHoister {
   }
 
   run() {
-    const node = this.path.node;
-    if (node._hoisted) return;
-    node._hoisted = true;
-
     this.path.traverse(referenceVisitor, this);
 
     this.getCompatibleScopes();
@@ -209,11 +206,14 @@ export default class PathHoister {
 
     // generate declaration and insert it to our point
     let uid = attachTo.scope.generateUidIdentifier("ref");
+
     const declarator = t.variableDeclarator(uid, this.path.node);
 
     const insertFn = this.attachAfter ? "insertAfter" : "insertBefore";
-    attachTo[insertFn]([
-      attachTo.isVariableDeclarator() ? declarator : t.variableDeclaration("var", [declarator]),
+    const [attached] = attachTo[insertFn]([
+      attachTo.isVariableDeclarator()
+        ? declarator
+        : t.variableDeclaration("var", [declarator]),
     ]);
 
     const parent = this.path.parentPath;
@@ -223,6 +223,10 @@ export default class PathHoister {
       uid = t.JSXExpressionContainer(uid);
     }
 
-    this.path.replaceWith(uid);
+    this.path.replaceWith(t.cloneNode(uid));
+
+    return attachTo.isVariableDeclarator()
+      ? attached.get("init")
+      : attached.get("declarations.0.init");
   }
 }

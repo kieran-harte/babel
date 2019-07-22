@@ -1,12 +1,16 @@
 import path from "path";
 import fs from "fs";
+import os from "os";
 import { sync as mkdirpSync } from "mkdirp";
-import homeOrTmp from "home-or-tmp";
-import * as babel from "babel-core";
+import * as babel from "@babel/core";
 import findCacheDir from "find-cache-dir";
 
-const DEFAULT_CACHE_DIR = findCacheDir({ name: "babel-register" }) || homeOrTmp;
-const DEFAULT_FILENAME = path.join(DEFAULT_CACHE_DIR, `.babel.${babel.version}.${babel.getEnv()}.json`);
+const DEFAULT_CACHE_DIR =
+  findCacheDir({ name: "@babel/register" }) || os.homedir() || os.tmpdir();
+const DEFAULT_FILENAME = path.join(
+  DEFAULT_CACHE_DIR,
+  `.babel.${babel.version}.${babel.getEnv()}.json`,
+);
 const FILENAME: string = process.env.BABEL_CACHE_PATH || DEFAULT_FILENAME;
 let data: Object = {};
 
@@ -20,7 +24,6 @@ export function save() {
   try {
     serialised = JSON.stringify(data, null, "  ");
   } catch (err) {
-
     if (err.message === "Invalid string length") {
       err.message = "Cache too large so it's been cleared.";
       console.error(err.stack);
@@ -58,4 +61,12 @@ export function load() {
 
 export function get(): Object {
   return data;
+}
+
+/**
+ * Clear the cache object.
+ */
+
+export function clear() {
+  data = {};
 }
