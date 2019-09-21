@@ -788,8 +788,11 @@ export default class Tokenizer extends LocationParser {
         return;
 
       case charCodes.atSign:
-        ++this.state.pos;
-        this.finishToken(tt.at);
+        if (this.input.charCodeAt(this.state.pos + 1) === charCodes.atSign) {
+          this.finishOp(tt.atat, 2);
+        } else {
+          this.finishOp(tt.at, 1);
+        }
         return;
 
       case charCodes.numberSign:
