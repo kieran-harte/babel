@@ -1986,3 +1986,19 @@ helpers.wrapRegExp = helper("7.2.6")`
     return _wrapRegExp.apply(this, arguments);
   }
 `;
+
+helpers.currying = helper("7.6.0")`
+  export default function currying(fn) {
+    const numParamsRequired = fn.length;
+    const params = [];
+    function curried(...args) {
+      params.push(...args);
+  
+      if (params.length >= numParamsRequired) {
+        return fn(...params);
+      }
+      return curried;
+    }
+    return curried;
+  }
+`;
