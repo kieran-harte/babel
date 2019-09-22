@@ -1990,15 +1990,15 @@ helpers.wrapRegExp = helper("7.2.6")`
 helpers.currying = helper("7.6.0")`
   export default function currying(fn) {
     const numParamsRequired = fn.length;
-    const params = [];
-    function curried(...args) {
-      params.push(...args);
-  
-      if (params.length >= numParamsRequired) {
-        return fn(...params);
+    function curryFactory(params) {
+      return function (...args) {
+        const newParams = params.concat(args);
+        if (newParams.length >= numParamsRequired) {
+          return fn(...newParams);
+        }
+        return curryFactory(newParams);
       }
-      return curried;
     }
-    return curried;
+    return curryFactory([]);
   }
 `;
