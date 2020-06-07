@@ -659,7 +659,12 @@ export default class Tokenizer extends LocationParser {
       // by a digit or another two dots.
 
       case charCodes.dot:
-        this.readToken_dot();
+        if (this.input.charCodeAt(this.state.pos + 1) === charCodes.asterisk) {
+          // Allow Hadamard operator
+          this.finishOp(tt.hadamard, 2);
+        } else {
+          this.readToken_dot();
+        }
         return;
 
       // Punctuation tokens.

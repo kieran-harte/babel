@@ -151,6 +151,7 @@ export const types: { [name: string]: TokenType } = {
   // startsExpr: required by v8intrinsic plugin
   modulo: new TokenType("%", { beforeExpr, binop: 10, startsExpr }),
   star: createBinop("*", 10),
+  hadamard: createBinop(".*", 13),
   slash: createBinop("/", 10),
   exponent: new TokenType("**", {
     beforeExpr,
